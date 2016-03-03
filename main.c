@@ -22,6 +22,7 @@ static volatile uint32_t lPM25M = 0;
 static volatile uint32_t lMillis = 0;
 static volatile uint32_t lMicros = 0;
 static volatile uint32_t lUpSecs = 0;
+static uint32_t lVersion = 7;
 
 #define millis() lMillis
 
@@ -71,6 +72,7 @@ uint8_t lRegRead(uint8_t reg)
 		REG_CASE32(0x0E, lPM25M);
 		
 		REG_CASE32(0x12, lUpSecs);
+		REG_CASE32(0x16, lVersion);
 
 		default:
 			return 0xFF;
