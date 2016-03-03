@@ -9,11 +9,6 @@
 //#pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmain"
 
-static volatile struct avgData32 lAvg10C;
-static volatile struct avgData32 lAvg25C;
-static volatile struct avgData32 lAvg10M;
-static volatile struct avgData32 lAvg25M;
-
 static volatile uint32_t lPM10C = 0;
 static volatile uint32_t lPM25C = 0;
 static volatile uint32_t lPM10M = 0;
@@ -22,7 +17,10 @@ static volatile uint32_t lPM25M = 0;
 static volatile uint32_t lMillis = 0;
 static volatile uint32_t lMicros = 0;
 static volatile uint32_t lUpSecs = 0;
-static uint32_t lVersion = 8;
+static uint32_t lVersion = 0x10;
+
+static volatile uint32_t lPM10CTemp = 0;
+static volatile uint32_t lPM25CTemp = 0;
 
 #define millis() lMillis
 
@@ -31,7 +29,7 @@ inline static uint32_t micros()
 	/* Capture timer value */
 	uint32_t ret = TCNT1;
 	/* Multiply by it's resolution, 8us */
-	ret <<= 3;
+	ret *= 8;
 	/* And return full value */
 	return lMicros + ret;
 }
@@ -48,7 +46,7 @@ ISR(TIMER0_COMPA_vect)
 
 ISR(TIMER1_OVF_vect)
 {
-	lMicros += 0xFFFF * 8;
+	lMicros += 0xFFFFL * 8L;
 }
 
 #define REG_CASE32(base,var) \
@@ -78,6 +76,9 @@ uint8_t lRegRead(uint8_t reg)
 		
 		REG_CASE32(0x12, lUpSecs);
 		REG_CASE32(0x16, lVersion);
+
+		REG_CASE32(0x1A, lPM10CTemp);
+		REG_CASE32(0x1E, lPM25CTemp);
 
 		default:
 			return 0xFF;
@@ -171,33 +172,38 @@ ISR(TWI_vect)
 void __attribute__((noreturn)) main(void);
 void main(void)
 {
-	unsigned long starttime;
-	unsigned long triggerOnP1;
-	unsigned long triggerOffP1;
-	unsigned long pulseLengthP1;
-	unsigned long durationP1 = 0;
+	struct avgData32 lAvg10C;
+	struct avgData32 lAvg10M;
+	struct avgData32 lAvg25C;
+	struct avgData32 lAvg25M;
+
+	uint32_t starttime;
+	uint32_t triggerOnP1;
+	uint32_t triggerOffP1;
+	uint32_t pulseLengthP1;
+	uint32_t durationP1 = 0;
 	uint8_t valP1 = 1;
 	uint8_t triggerP1 = 0;
-	unsigned long triggerOnP2;
-	unsigned long triggerOffP2;
-	unsigned long pulseLengthP2;
-	unsigned long durationP2 = 0;
+	uint32_t triggerOnP2;
+	uint32_t triggerOffP2;
+	uint32_t pulseLengthP2;
+	uint32_t durationP2 = 0;
 	uint8_t valP2 = 1;
 	uint8_t triggerP2 = 0;
 	float ratioP1 = 0;
 	float ratioP2 = 0;
-	unsigned long sampletime_ms = 30000;
+	uint32_t sampletime_ms = 30000;
 	float countP1;
 	float countP2;
-		
+	
 	wdt_disable();
 	rngSeed();
 
-	avgSampleInit32(&lAvg10C);
-	avgSampleInit32(&lAvg25C);
+	avgSampleInitDbl(&lAvg10C);
+	avgSampleInitDbl(&lAvg25C);
 	
-	avgSampleInit32(&lAvg10M);
-	avgSampleInit32(&lAvg25M);
+	avgSampleInitDbl(&lAvg10M);
+	avgSampleInitDbl(&lAvg25M);
 
 	//DDRD |= (1 << PD1);
 	//PORTD |= (1 << PD1);
@@ -208,7 +214,7 @@ void main(void)
 	TIMSK0 = (1 << OCIE0A);
 	
 	TCCR1A = 0;
-	TCCR1B = (0 << WGM12) | (1 << CS11) | (1 << CS10); // div64, @125kHz, 8us
+	TCCR1B = (0 << WGM12) | (1 << CS11) | (1 << CS10); // div64, @125kHz, 8us period
 	TIMSK1 = (1 << TOIE1);
 	
 	TWAR = (0x7C << 1);
@@ -262,7 +268,7 @@ void main(void)
 		// Function creates particle count and mass concentration
 		// from PPD-42 low pulse occupancy (LPO).
 		if ((millis() - starttime) > sampletime_ms)
-		{
+		{		
 			// Generates PM10 and PM2.5 count from LPO.
 			// Derived from code created by Chris Nafis
 			// http://www.howmuchsnow.com/arduino/airquality/grovedust/
@@ -270,8 +276,9 @@ void main(void)
 			ratioP2 = durationP2 / (sampletime_ms * 10.0);
 			countP1 = 1.1 * pow(ratioP1, 3) - 3.8 * pow(ratioP1, 2) + 520 * ratioP1 + 0.62;
 			countP2 = 1.1 * pow(ratioP2, 3) - 3.8 * pow(ratioP2, 2) + 520 * ratioP2 + 0.62;
-			float PM10count = countP2;
+			float PM10count = countP2; // particles/0.01cf
 			float PM25count = countP1 - countP2;
+			
 			// Assues density, shape, and size of dust
 			// to estimate mass concentration from particle
 			// count. This method was described in a 2009
@@ -284,32 +291,35 @@ void main(void)
 			double vol10 = (4.f / 3.f) * pi * pow(r10, 3.f);
 			double density = 1.65 * pow(10, 12);
 			double mass10 = density * vol10;
-			double K = 3531.5;
+			double K = 3531.47;
 			float concLarge = (PM10count) * K * mass10;
 			// next, PM2.5 mass concentration algorithm
 			double r25 = 0.44 * pow(10.f, -6.f);
 			double vol25 = (4.f / 3.f) * pi * pow(r25, 3.f);
 			double mass25 = density * vol25;
 			float concSmall = (PM25count) * K * mass25;
-			
+
 			/*
-				Comm protocol does not like floating point math, as it's not very portable at binary level.
-				So we multiply everything by 100. And average 12 samples. PPD-42 is noisy as hell.
+				PPD42 is noisy as hell, so average last 24 samples. 12 minutes window.
 			*/
-			avgSampleAddD(&lAvg10C, PM10count * 100.f * 35.3147f); // pt/f3 -> pt/m3
-			avgSampleAddD(&lAvg25C, PM25count * 100.f * 35.3147f); 
-			avgSampleAddD(&lAvg10M, concLarge * 100.f); // ug/m3
-			avgSampleAddD(&lAvg25M, concSmall * 100.f);
+			avgSampleAddDbl(&lAvg10C, PM10count); 
+			avgSampleAddDbl(&lAvg25C, PM25count); 
+			avgSampleAddDbl(&lAvg10M, concLarge);
+			avgSampleAddDbl(&lAvg25M, concSmall);
 			
-			lPM10C = avgSampleAvg32(&lAvg10C);
-			lPM25C = avgSampleAvg32(&lAvg25C);
+			lPM10C = avgSampleAvgDbl(&lAvg10C) * K; // pt/0.01f3 -> pt/m3
+			lPM25C = avgSampleAvgDbl(&lAvg25C) * K;
 			
-			lPM10M = avgSampleAvg32(&lAvg10M);
-			lPM25M = avgSampleAvg32(&lAvg25M);
+			lPM10M = avgSampleAvgDbl(&lAvg10M) * 10000.f;  // ug/m3 * 10k
+			lPM25M = avgSampleAvgDbl(&lAvg25M) * 10000.f;
 
 			durationP1 = 0;
 			durationP2 = 0;
 			starttime = millis();
+			
+			/* should we reset micros() here? */
+			lMicros = 0;
+			TCNT1 = 0;
 		}
 	}
 }

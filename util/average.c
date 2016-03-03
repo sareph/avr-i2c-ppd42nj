@@ -3,32 +3,72 @@
 #include "average.h"
 #include <string.h>
 
-void avgSampleInit32(volatile struct avgData32 * data)
+void avgSampleInitDbl(struct avgData32 * data)
 {
 	data->i.sampleCurrent = 0;
 	data->i.m = 0;
-	memset((struct avgData32 *)data->data, 0, sizeof(int32_t) * SYS_SAMPLE_AVERAGE_COUNT);
 }
 
-void avgSampleAdd32(volatile struct avgData32 * data, int32_t *smp)
+void avgSampleAddDbl(struct avgData32 * data, double smp)
 {
-	data->data[(data->i.sampleCurrent % SYS_SAMPLE_AVERAGE_COUNT)] = *smp;
+	data->data[data->i.sampleCurrent] = smp;
 	
 	if (data->i.m < SYS_SAMPLE_AVERAGE_COUNT)
 	{
-		data->i.m ++;
+		++data->i.m;
 	}
 	
-	data->i.sampleCurrent++;
+	++data->i.sampleCurrent;
+	
+	if (data->i.sampleCurrent >= SYS_SAMPLE_AVERAGE_COUNT)
+	{
+		data->i.sampleCurrent = 0;
+	}
 }
 
-void avgSampleAddD(volatile struct avgData32 * data, double smp)
+double avgSampleAvgDbl(struct avgData32 * data)
 {
-	int32_t t = smp;
-	avgSampleAdd32(data, &t);
+	double s = 0;
+	
+	for (uint8_t i = 0; i < data->i.m; ++i)
+	{
+		s += data->data[i];
+	}
+	
+	if (data->i.m == 0)
+	{
+		return 0;
+	}
+	else
+	{
+		return (s / (double)data->i.m);
+	}
 }
 
-int32_t avgSampleAvg32(volatile struct avgData32 * data)
+void avgSampleInit64(struct avgData64 * data)
+{
+	data->i.sampleCurrent = 0;
+	data->i.m = 0;
+}
+
+void avgSampleAdd64(struct avgData64 * data, int64_t smp)
+{
+	data->data[data->i.sampleCurrent] = smp;
+	
+	if (data->i.m < SYS_SAMPLE_AVERAGE_COUNT)
+	{
+		++data->i.m;
+	}
+	
+	++data->i.sampleCurrent;
+	
+	if (data->i.sampleCurrent >= SYS_SAMPLE_AVERAGE_COUNT)
+	{
+		data->i.sampleCurrent = 0;
+	}
+}
+
+int64_t avgSampleAvg64(struct avgData64 * data)
 {
 	int64_t s = 0;
 	
@@ -43,6 +83,6 @@ int32_t avgSampleAvg32(volatile struct avgData32 * data)
 	}
 	else
 	{
-		return s / data->i.m;
+		return (s / (int64_t)data->i.m);
 	}
 }
