@@ -309,9 +309,14 @@ void main(void)
 			lP2Duration = 0;
 			starttime = millis();
 			
-			/* should we reset micros() here? */
-			lMicros = 0;
-			TCNT1 = 0;
+			/* Should we reset micros() here? If there is no pulse in progress. Just to avoid counter overflow after 70m */
+			cli();
+			if ((PIND & (1 << PD3)) && (PIND & (1 << PD2)))
+			{
+				lMicros = 0;
+				TCNT1 = 0;
+			}
+			sei();
 		}
 	}
 }
