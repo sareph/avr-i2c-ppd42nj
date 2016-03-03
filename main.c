@@ -9,8 +9,7 @@
 //#pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmain"
 
-uint32_t starttime;
-uint32_t sampletime_ms = 30000;
+#define SAMPLE_TIME_MS 30000
 
 static volatile uint32_t lPM10C = 0;
 static volatile uint32_t lPM25C = 0;
@@ -20,12 +19,14 @@ static volatile uint32_t lPM25M = 0;
 static volatile uint32_t lMillis = 0;
 static volatile uint32_t lMicros = 0;
 static volatile uint32_t lUpSecs = 0;
-static uint32_t lVersion = 0x10;
+static uint32_t lVersion = 0x11;
 
-static volatile uint32_t lPM10CTemp = 0;
-static volatile uint32_t lPM25CTemp = 0;
+static volatile uint32_t lDebug1 = 0;
+static volatile uint32_t lDebug2 = 0;
 
 #define millis() lMillis
+static volatile uint32_t lP1Duration = 0;
+static volatile uint32_t lP2Duration = 0;
 
 inline static uint32_t micros()
 {
@@ -80,8 +81,8 @@ uint8_t lRegRead(uint8_t reg)
 		REG_CASE32(0x12, lUpSecs);
 		REG_CASE32(0x16, lVersion);
 
-		REG_CASE32(0x1A, lPM10CTemp);
-		REG_CASE32(0x1E, lPM25CTemp);
+		REG_CASE32(0x1A, lDebug1);
+		REG_CASE32(0x1E, lDebug2);
 
 		default:
 			return 0xFF;
@@ -172,14 +173,10 @@ ISR(TWI_vect)
 	}
 }
 
-static volatile uint32_t lP1Duration = 0;
-static volatile uint32_t lP2Duration = 0;
-
-static volatile uint32_t lP1OnMicros = 0;
-static volatile uint32_t lP2OnMicros = 0;
-
 ISR(INT0_vect) /* PD2, P1 */
 {
+	static uint32_t lP1OnMicros = 0;
+
 	if (PIND & (1 << PD2)) // high
 	{
 		lP1Duration += (micros() - lP1OnMicros);
@@ -192,6 +189,8 @@ ISR(INT0_vect) /* PD2, P1 */
 
 ISR(INT1_vect) /* PD3, P2 */
 {
+	static uint32_t lP2OnMicros = 0;
+
 	if (PIND & (1 << PD3)) // high
 	{
 		lP2Duration += (micros() - lP2OnMicros);
@@ -206,6 +205,7 @@ void __attribute__((noreturn)) main(void);
 void main(void)
 {
 	float ratioP1, ratioP2, countP1, countP2;
+	uint32_t startTime, sampleTimeMs = SAMPLE_TIME_MS;
 	
 	struct avgData32 lAvg10C;
 	struct avgData32 lAvg10M;
@@ -240,7 +240,7 @@ void main(void)
 	EIMSK = (1<<INT0) | (1<<INT1);
 	
 	wdt_enable(WDTO_2S);
-	starttime = millis();
+	startTime = millis();
 
 	sei();
 	for (;;)
@@ -254,22 +254,21 @@ void main(void)
 		*/
 		// Function creates particle count and mass concentration
 		// from PPD-42 low pulse occupancy (LPO).
-		if ((millis() - starttime) > sampletime_ms)
+		if ((millis() - startTime) > sampleTimeMs)
 		{	
 			// Generates PM10 and PM2.5 count from LPO.
 			// Derived from code created by Chris Nafis
 			// http://www.howmuchsnow.com/arduino/airquality/grovedust/
-			//ratioP1 = durationP1 / (sampletime_ms * 10.0); /* 0 -> 100 */
-			//ratioP2 = durationP2 / (sampletime_ms * 10.0);
-			ratioP1 = lP1Duration / (sampletime_ms * 10.0); /* 0 -> 100 */
-			ratioP2 = lP2Duration / (sampletime_ms * 10.0);
+
+			ratioP1 = lP1Duration / (sampleTimeMs * 10.0); /* 0 -> 100 */
+			ratioP2 = lP2Duration / (sampleTimeMs * 10.0);
 			countP1 = 1.1 * pow(ratioP1, 3) - 3.8 * pow(ratioP1, 2) + 520 * ratioP1 + 0.62;
 			countP2 = 1.1 * pow(ratioP2, 3) - 3.8 * pow(ratioP2, 2) + 520 * ratioP2 + 0.62;
 			float PM10count = countP2; // particles/0.01cf
 			float PM25count = countP1 - countP2;
 
-			lPM10CTemp = lP1Duration;
-			lPM25CTemp = lP2Duration;
+			lDebug1 = lP1Duration;
+			lDebug2 = lP2Duration;
 			
 			// Assues density, shape, and size of dust
 			// to estimate mass concentration from particle
@@ -307,7 +306,7 @@ void main(void)
 
 			lP1Duration = 0;
 			lP2Duration = 0;
-			starttime = millis();
+			startTime = millis();
 			
 			/* Should we reset micros() here? If there is no pulse in progress. Just to avoid counter overflow after 70m */
 			cli();
