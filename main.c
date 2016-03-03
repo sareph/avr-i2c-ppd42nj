@@ -9,6 +9,9 @@
 //#pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmain"
 
+uint32_t starttime;
+uint32_t sampletime_ms = 30000;
+
 static volatile uint32_t lPM10C = 0;
 static volatile uint32_t lPM25C = 0;
 static volatile uint32_t lPM10M = 0;
@@ -117,7 +120,7 @@ ISR(TWI_vect)
 			TWCR |= (1 << TWINT) | (1 << TWEA);
 			break;
 		}
-			/* prev. SLA+W, data received, ACK returned -> receive data and ACK */
+		/* prev. SLA+W, data received, ACK returned -> receive data and ACK */
 		case 0x80:
 		{
 			data = TWDR;
@@ -169,32 +172,45 @@ ISR(TWI_vect)
 	}
 }
 
+static volatile uint32_t lP1Duration = 0;
+static volatile uint32_t lP2Duration = 0;
+
+static volatile uint32_t lP1OnMicros = 0;
+static volatile uint32_t lP2OnMicros = 0;
+
+ISR(INT0_vect) /* PD2, P1 */
+{
+	if (PIND & (1 << PD2)) // high
+	{
+		lP1Duration += (micros() - lP1OnMicros);
+	}
+	else
+	{
+		lP1OnMicros = micros();
+	}
+}
+
+ISR(INT1_vect) /* PD3, P2 */
+{
+	if (PIND & (1 << PD3)) // high
+	{
+		lP2Duration += (micros() - lP2OnMicros);
+	}
+	else
+	{
+		lP2OnMicros = micros();
+	}
+}
+
 void __attribute__((noreturn)) main(void);
 void main(void)
 {
+	float ratioP1, ratioP2, countP1, countP2;
+	
 	struct avgData32 lAvg10C;
 	struct avgData32 lAvg10M;
 	struct avgData32 lAvg25C;
 	struct avgData32 lAvg25M;
-
-	uint32_t starttime;
-	uint32_t triggerOnP1;
-	uint32_t triggerOffP1;
-	uint32_t pulseLengthP1;
-	uint32_t durationP1 = 0;
-	uint8_t valP1 = 1;
-	uint8_t triggerP1 = 0;
-	uint32_t triggerOnP2;
-	uint32_t triggerOffP2;
-	uint32_t pulseLengthP2;
-	uint32_t durationP2 = 0;
-	uint8_t valP2 = 1;
-	uint8_t triggerP2 = 0;
-	float ratioP1 = 0;
-	float ratioP2 = 0;
-	uint32_t sampletime_ms = 30000;
-	float countP1;
-	float countP2;
 	
 	wdt_disable();
 	rngSeed();
@@ -220,6 +236,9 @@ void main(void)
 	TWAR = (0x7C << 1);
 	TWCR = (1 << TWEA) | (1 << TWEN) | (1 << TWIE);
 
+	EICRA = (1<<ISC10) | (1<<ISC00); /* both interrupts, both edges */
+	EIMSK = (1<<INT0) | (1<<INT1);
+	
 	wdt_enable(WDTO_2S);
 	starttime = millis();
 
@@ -233,51 +252,24 @@ void main(void)
 			https://publiclab.org/wiki/dustduino
 			I only hope, that my implementation of millis() and micros() is correct.
 		*/
-		
-		valP1 = (PIND & (1 << PD2)) ? 1 : 0;
-		valP2 = (PIND & (1 << PD3)) ? 1 : 0;
-
-		if (valP1 == 0 && triggerP1 == 0)
-		{
-			triggerP1 = 1;
-			triggerOnP1 = micros();
-		}
-		
-		if (valP1 == 1 && triggerP1 == 1)
-		{
-			triggerOffP1 = micros();
-			pulseLengthP1 = triggerOffP1 - triggerOnP1;
-			durationP1 += pulseLengthP1;
-			triggerP1 = 0;
-		}
-		
-		if (valP2 == 0 && triggerP2 == 0)
-		{
-			triggerP2 = 1;
-			triggerOnP2 = micros();
-		}
-		
-		if (valP2 == 1 && triggerP2 == 1)
-		{
-			triggerOffP2 = micros();
-			pulseLengthP2 = triggerOffP2 - triggerOnP2;
-			durationP2 += pulseLengthP2;
-			triggerP2 = 0;
-		}
-
 		// Function creates particle count and mass concentration
 		// from PPD-42 low pulse occupancy (LPO).
 		if ((millis() - starttime) > sampletime_ms)
-		{		
+		{	
 			// Generates PM10 and PM2.5 count from LPO.
 			// Derived from code created by Chris Nafis
 			// http://www.howmuchsnow.com/arduino/airquality/grovedust/
-			ratioP1 = durationP1 / (sampletime_ms * 10.0);
-			ratioP2 = durationP2 / (sampletime_ms * 10.0);
+			//ratioP1 = durationP1 / (sampletime_ms * 10.0); /* 0 -> 100 */
+			//ratioP2 = durationP2 / (sampletime_ms * 10.0);
+			ratioP1 = lP1Duration / (sampletime_ms * 10.0); /* 0 -> 100 */
+			ratioP2 = lP2Duration / (sampletime_ms * 10.0);
 			countP1 = 1.1 * pow(ratioP1, 3) - 3.8 * pow(ratioP1, 2) + 520 * ratioP1 + 0.62;
 			countP2 = 1.1 * pow(ratioP2, 3) - 3.8 * pow(ratioP2, 2) + 520 * ratioP2 + 0.62;
 			float PM10count = countP2; // particles/0.01cf
 			float PM25count = countP1 - countP2;
+
+			lPM10CTemp = lP1Duration;
+			lPM25CTemp = lP2Duration;
 			
 			// Assues density, shape, and size of dust
 			// to estimate mass concentration from particle
@@ -313,8 +305,8 @@ void main(void)
 			lPM10M = avgSampleAvgDbl(&lAvg10M) * 10000.f;  // ug/m3 * 10k
 			lPM25M = avgSampleAvgDbl(&lAvg25M) * 10000.f;
 
-			durationP1 = 0;
-			durationP2 = 0;
+			lP1Duration = 0;
+			lP2Duration = 0;
 			starttime = millis();
 			
 			/* should we reset micros() here? */
