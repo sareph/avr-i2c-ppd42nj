@@ -27,7 +27,7 @@ static volatile uint32_t lUpSecs = 0;
 
 inline static uint32_t micros()
 {
-	return lMicros + TCNT1;
+	return lMicros + (TCNT1 * 8);
 }
 
 ISR(TIMER0_COMPA_vect)
@@ -42,10 +42,11 @@ ISR(TIMER0_COMPA_vect)
 
 ISR(TIMER1_OVF_vect)
 {
-	lMicros += 65535;
+	lMicros += 0xFFFF * 8;
 }
 
-#define REG_CASE32(base,var)	case base: \
+#define REG_CASE32(base,var) \
+		case base: \
 			return var >> 0; \
 		case base + 1: \
 			return var >> 8; \
