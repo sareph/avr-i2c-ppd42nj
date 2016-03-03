@@ -30,7 +30,7 @@ void avgSampleAddD(volatile struct avgData32 * data, double smp)
 
 int32_t avgSampleAvg32(volatile struct avgData32 * data)
 {
-	int32_t s = 0;
+	int64_t s = 0;
 	
 	for (uint8_t i = 0; i < data->i.m; ++i)
 	{

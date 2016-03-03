@@ -22,13 +22,18 @@ static volatile uint32_t lPM25M = 0;
 static volatile uint32_t lMillis = 0;
 static volatile uint32_t lMicros = 0;
 static volatile uint32_t lUpSecs = 0;
-static uint32_t lVersion = 7;
+static uint32_t lVersion = 8;
 
 #define millis() lMillis
 
 inline static uint32_t micros()
 {
-	return lMicros + (TCNT1 * 8);
+	/* Capture timer value */
+	uint32_t ret = TCNT1;
+	/* Multiply by it's resolution, 8us */
+	ret <<= 3;
+	/* And return full value */
+	return lMicros + ret;
 }
 
 ISR(TIMER0_COMPA_vect)
@@ -289,12 +294,12 @@ void main(void)
 			
 			/*
 				Comm protocol does not like floating point math, as it's not very portable at binary level.
-				So we multiply everything by 10k. And average 12 samples. PPD-42 is noisy as hell.
+				So we multiply everything by 100. And average 12 samples. PPD-42 is noisy as hell.
 			*/
-			avgSampleAddD(&lAvg10C, PM10count * 10000.f * 35.3147f); // pt/f3 -> pt/m3
-			avgSampleAddD(&lAvg25C, PM25count * 10000.f * 35.3147f); 
-			avgSampleAddD(&lAvg10M, concLarge * 10000.f); // ug/m3
-			avgSampleAddD(&lAvg25M, concSmall * 10000.f);
+			avgSampleAddD(&lAvg10C, PM10count * 100.f * 35.3147f); // pt/f3 -> pt/m3
+			avgSampleAddD(&lAvg25C, PM25count * 100.f * 35.3147f); 
+			avgSampleAddD(&lAvg10M, concLarge * 100.f); // ug/m3
+			avgSampleAddD(&lAvg25M, concSmall * 100.f);
 			
 			lPM10C = avgSampleAvg32(&lAvg10C);
 			lPM25C = avgSampleAvg32(&lAvg25C);
