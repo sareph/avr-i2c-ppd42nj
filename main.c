@@ -204,7 +204,6 @@ ISR(INT1_vect) /* PD3, P2 */
 void __attribute__((noreturn)) main(void);
 void main(void)
 {
-	float ratioP1, ratioP2, countP1, countP2;
 	uint32_t startTime, sampleTimeMs = SAMPLE_TIME_MS;
 	
 	struct avgData32 lAvg10C;
@@ -260,10 +259,10 @@ void main(void)
 			// Derived from code created by Chris Nafis
 			// http://www.howmuchsnow.com/arduino/airquality/grovedust/
 
-			ratioP1 = lP1Duration / (sampleTimeMs * 10.0); /* 0 -> 100 */
-			ratioP2 = lP2Duration / (sampleTimeMs * 10.0);
-			countP1 = 1.1 * pow(ratioP1, 3) - 3.8 * pow(ratioP1, 2) + 520 * ratioP1 + 0.62;
-			countP2 = 1.1 * pow(ratioP2, 3) - 3.8 * pow(ratioP2, 2) + 520 * ratioP2 + 0.62;
+			float ratioP1 = lP1Duration / (sampleTimeMs * 10.0); /* 0 -> 100 */
+			float ratioP2 = lP2Duration / (sampleTimeMs * 10.0);
+			float countP1 = 1.1 * pow(ratioP1, 3) - 3.8 * pow(ratioP1, 2) + 520 * ratioP1 + 0.62;
+			float countP2 = 1.1 * pow(ratioP2, 3) - 3.8 * pow(ratioP2, 2) + 520 * ratioP2 + 0.62;
 			float PM10count = countP2; // particles/0.01cf
 			float PM25count = countP1 - countP2;
 
