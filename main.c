@@ -10,21 +10,22 @@
 #pragma GCC diagnostic ignored "-Wmain"
 
 #define SAMPLE_TIME_MS 30000
+#define VERSION 0x12
+#define millis() lMillis
 
-static volatile uint32_t lPM10C = 0;
-static volatile uint32_t lPM25C = 0;
-static volatile uint32_t lPM10M = 0;
-static volatile uint32_t lPM25M = 0;
+static volatile uint32_t lPM10Count = 0;
+static volatile uint32_t lPM25Count = 0;
+static volatile uint32_t lPM10Mass = 0;
+static volatile uint32_t lPM25Mass = 0;
 
 static volatile uint32_t lMillis = 0;
 static volatile uint32_t lMicros = 0;
 static volatile uint32_t lUpSecs = 0;
-static uint32_t lVersion = 0x11;
+static const uint32_t lVersion = VERSION;
 
 static volatile uint32_t lDebug1 = 0;
 static volatile uint32_t lDebug2 = 0;
 
-#define millis() lMillis
 static volatile uint32_t lP1Duration = 0;
 static volatile uint32_t lP2Duration = 0;
 
@@ -73,10 +74,10 @@ uint8_t lRegRead(uint8_t reg)
 		case 0x01: // config register, currently unused
 			return 0;
 		
-		REG_CASE32(0x02, lPM10C);
-		REG_CASE32(0x06, lPM25C);
-		REG_CASE32(0x0A, lPM10M);
-		REG_CASE32(0x0E, lPM25M);
+		REG_CASE32(0x02, lPM10Count);
+		REG_CASE32(0x06, lPM25Count);
+		REG_CASE32(0x0A, lPM10Mass);
+		REG_CASE32(0x0E, lPM25Mass);
 		
 		REG_CASE32(0x12, lUpSecs);
 		REG_CASE32(0x16, lVersion);
@@ -204,7 +205,7 @@ ISR(INT1_vect) /* PD3, P2 */
 void __attribute__((noreturn)) main(void);
 void main(void)
 {
-	uint32_t startTime, sampleTimeMs = SAMPLE_TIME_MS;
+	uint32_t startTime;
 	
 	struct avgData32 lAvg10C;
 	struct avgData32 lAvg10M;
@@ -220,7 +221,7 @@ void main(void)
 	avgSampleInitDbl(&lAvg10M);
 	avgSampleInitDbl(&lAvg25M);
 
-	//DDRD |= (1 << PD1);
+	//DDRD |= (1 << PD1); /* trsh pin, do not use */
 	//PORTD |= (1 << PD1);
 
 	OCR0A = 0x4D; // 100Hz
@@ -253,14 +254,14 @@ void main(void)
 		*/
 		// Function creates particle count and mass concentration
 		// from PPD-42 low pulse occupancy (LPO).
-		if ((millis() - startTime) > sampleTimeMs)
+		if ((millis() - startTime) > SAMPLE_TIME_MS)
 		{	
 			// Generates PM10 and PM2.5 count from LPO.
 			// Derived from code created by Chris Nafis
 			// http://www.howmuchsnow.com/arduino/airquality/grovedust/
 
-			float ratioP1 = lP1Duration / (sampleTimeMs * 10.0); /* 0 -> 100 */
-			float ratioP2 = lP2Duration / (sampleTimeMs * 10.0);
+			float ratioP1 = lP1Duration / (SAMPLE_TIME_MS * 10.0); /* 0 -> 100 */
+			float ratioP2 = lP2Duration / (SAMPLE_TIME_MS * 10.0);
 			float countP1 = 1.1 * pow(ratioP1, 3) - 3.8 * pow(ratioP1, 2) + 520 * ratioP1 + 0.62;
 			float countP2 = 1.1 * pow(ratioP2, 3) - 3.8 * pow(ratioP2, 2) + 520 * ratioP2 + 0.62;
 			float PM10count = countP2; // particles/0.01cf
@@ -297,11 +298,11 @@ void main(void)
 			avgSampleAddDbl(&lAvg10M, concLarge);
 			avgSampleAddDbl(&lAvg25M, concSmall);
 			
-			lPM10C = avgSampleAvgDbl(&lAvg10C) * K; // pt/0.01f3 -> pt/m3
-			lPM25C = avgSampleAvgDbl(&lAvg25C) * K;
+			lPM10Count = avgSampleAvgDbl(&lAvg10C) * K; // pt/0.01f3 -> pt/m3
+			lPM25Count = avgSampleAvgDbl(&lAvg25C) * K;
 			
-			lPM10M = avgSampleAvgDbl(&lAvg10M) * 10000.f;  // ug/m3 * 10k
-			lPM25M = avgSampleAvgDbl(&lAvg25M) * 10000.f;
+			lPM10Mass = avgSampleAvgDbl(&lAvg10M) * 10000.f;  // ug/m3 * 10k
+			lPM25Mass = avgSampleAvgDbl(&lAvg25M) * 10000.f;
 
 			lP1Duration = 0;
 			lP2Duration = 0;
