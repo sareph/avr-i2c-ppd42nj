@@ -142,6 +142,7 @@ ISR(TWI_vect)
 			}
 
 			++lTwiCnt;
+			/* always ack after data was processed */
 			TWCR |= (1 << TWINT) | ack;
 			break;
 		}
